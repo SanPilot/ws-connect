@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <script>
+  var connection, s;
+  window.WebSocket = window.WebSocket || window.MozWebSocket;
+  if(!window.WebSocket) {
+    console.error("Could not find websocket API! Maybe your browser doesn't support WebSockets.");
+  } else {
+    var c = () => {
+      connection = new WebSocket("ws://127.0.0.1:3000");
+      connection.onerror = (e) => {
+        console.error("There was an error connecting to the server!");
+      };
+      connection.onmessage = (message) => {
+        try {
+          console.log(JSON.parse(message.data));
+        } catch(e) {
+          console.log(message.data);
+        }
+      };
+      connection.onclose = () => {
+        console.error("The server closed the connection unexpectedly.");
+      }
+      s = (message) => {
+        try {
+          message = JSON.stringify(message);
+        } catch(e) {
+          message = message;
+        }
+        connection.send(message);
+      }
+    };
+    c();
+  }
+  </script>
+  </body>
+  </html>
