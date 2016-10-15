@@ -8,6 +8,7 @@
     console.error("Could not find websocket API! Maybe your browser doesn't support WebSockets.");
   } else {
     var c = () => {
+      console.clear();
       connection = new WebSocket("ws://127.0.0.1:3000");
       connection.onerror = (e) => {
         console.error("There was an error connecting to the server!");
