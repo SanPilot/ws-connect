@@ -2,38 +2,68 @@
 <html>
 <body>
   <script>
-  var connection, s;
+  var connection, s, auth, authToken;
   window.WebSocket = window.WebSocket || window.MozWebSocket;
   if(!window.WebSocket) {
     console.error("Could not find websocket API! Maybe your browser doesn't support WebSockets.");
   } else {
     var c = () => {
+      var callbackArray = {};
       console.clear();
       connection = new WebSocket("ws://127.0.0.1:3000");
       connection.onerror = (e) => {
         console.error("There was an error connecting to the server!");
       };
-      connection.onmessage = (message) => {
-        try {
-          console.log(JSON.parse(message.data));
-        } catch(e) {
-          console.log(message.data);
-        }
-      };
       connection.onclose = () => {
         console.error("The server closed the connection unexpectedly.");
-      }
-      s = (message) => {
+      };
+      connection.onmessage = (message) => {
+        message = message.data;
+        var parseError;
         try {
+          message = JSON.parse(message);
+        } catch (e) {
+          parseError = e;
+        }
+        if(message.constructor !== {}.constructor) {console.error("Failed to parse message from server: " + parseError); return;}
+        var callback = callbackArray[message.id];
+        if (callback !== undefined) callback[0](message);
+        if(!callback[1]) {
+          console.log(message);
+        }
+        callbackArray[message.id] = undefined;
+      };
+      s = (message, dontLog) => {
+        dontLog = dontLog || false;
+        var messageId = Math.round(Math.random() * 1000000);
+        message.JWT = (message.JWT !== undefined && message.JWT.constructor === "".constructor && message.JWT.length ? message.JWT : authToken);
+        if(message.JWT === undefined) console.warn("Sending message without authentication");
+        try {
+          message.id = messageId;
           message = JSON.stringify(message);
         } catch(e) {
-          message = message;
+          console.error("Failed to parse message: " + parseError); return;
         }
         connection.send(message);
+        callbackArray[messageId] = [() => {}, dontLog];
+        var callbackHandler = (callback) => {callbackArray[messageId] = [callback || function(){}, dontLog]};
+        return {onResponse: callbackHandler};
+      }
+      auth = (user, pass) => {
+        user = user || "test";
+        pass = pass || "test";
+        s({action:"auth", auth: [user,pass]}, true).onResponse((r) => {
+          if(r.status === "success") {
+            authToken = r.content.token;
+            console.info("Successfully authenticated as '" + user + "'");
+          } else {
+            console.error("There was an error authenticating. The server says: " + r.error);
+          }
+        });
       }
     };
     c();
   }
   </script>
-  </body>
-  </html>
+</body>
+</html>
