@@ -2,7 +2,7 @@
 <html>
 <body>
   <script>
-  var connection, s, auth, authToken;
+  var connection, s, auth, authToken, r;
   window.WebSocket = window.WebSocket || window.MozWebSocket;
   if(!window.WebSocket) {
     console.error("Could not find websocket API! Maybe your browser doesn't support WebSockets.");
@@ -48,7 +48,11 @@
         callbackArray[messageId] = [() => {}, dontLog];
         var callbackHandler = (callback) => {callbackArray[messageId] = [callback || function(){}, dontLog]};
         return {onResponse: callbackHandler};
-      }
+      };
+      r = (action, params) => {
+        params.action = action;
+        s(params);
+      };
       auth = (user, pass) => {
         user = user || "test";
         pass = pass || "test";
@@ -60,7 +64,7 @@
             console.error("There was an error authenticating. The server says: " + r.error);
           }
         });
-      }
+      };
     };
     c();
   }
