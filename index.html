@@ -1,24 +1,35 @@
 <!DOCTYPE html>
 <html>
 <body>
+  <div id="status">NOT CONNECTED</div>
+  <input type="file" id="file" multiple>
   <script>
-  var connection, s, auth, authToken, r;
+  var connection, s, auth, authToken, r, file = document.getElementById("file"), lastMessage, simpleConnection, wsAddress = "ws://127.0.0.1:3000";
+  file.open = file.click;
   window.WebSocket = window.WebSocket || window.MozWebSocket;
   if(!window.WebSocket) {
     console.error("Could not find websocket API! Maybe your browser doesn't support WebSockets.");
   } else {
     var c = () => {
+      simpleConnection = new WebSocket(wsAddress);
       var callbackArray = {};
       console.clear();
-      connection = new WebSocket("ws://127.0.0.1:3000");
+      connection = new WebSocket(wsAddress);
+      document.getElementById("status").style.color = "#19E019";
+      document.getElementById("status").innerHTML = "CONNECTED";
       connection.onerror = (e) => {
+        document.getElementById("status").style.color = "#FF7D7D";
+        document.getElementById("status").innerHTML = "NOT CONNECTED";
         console.error("There was an error connecting to the server!");
       };
       connection.onclose = () => {
+        document.getElementById("status").style.color = "#FF7D7D";
+        document.getElementById("status").innerHTML = "NOT CONNECTED";
         console.error("The server closed the connection unexpectedly.");
       };
       connection.onmessage = (message) => {
         message = message.data;
+        lastMessage = message;
         var parseError;
         try {
           message = JSON.parse(message);
@@ -26,8 +37,8 @@
           parseError = e;
         }
         if(message.constructor !== {}.constructor) {console.error("Failed to parse message from server: " + parseError); return;}
-        var callback = callbackArray[message.id];
-        if (callback !== undefined) callback[0](message);
+        var callback = callbackArray[message.id] || [()=>{},false];
+        callback[0](message);
         if(!callback[1]) {
           console.log(message);
         }
@@ -50,6 +61,8 @@
         return {onResponse: callbackHandler};
       };
       r = (action, params) => {
+        params = params || {};
+        action = action || "";
         params.action = action;
         s(params);
       };
@@ -70,4 +83,24 @@
   }
   </script>
 </body>
+<style type="text/css">
+body, html {
+  text-align: center;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+}
+#status {
+  font-size: 100px;
+  font-family: monospace;
+  color: red;
+  font-weight: bold;
+  display: inline-block;
+  margin: auto;
+}
+#file {
+  display: none;
+}
+</style>
 </html>
