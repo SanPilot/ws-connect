@@ -30,11 +30,13 @@
       connection.onmessage = (message) => {
         message = message.data;
         lastMessage = message;
-        var parseError;
-        try {
-          message = JSON.parse(message);
-        } catch (e) {
-          parseError = e;
+        var parseError = "";
+        if(message.constructor === String) {
+          try {
+            message = JSON.parse(message);
+          } catch (e) {
+            parseError = e;
+          }
         }
         if(message.constructor !== {}.constructor) {console.error("Failed to parse message from server: " + parseError); return;}
         var callback = callbackArray[message.id] || [()=>{},false];
