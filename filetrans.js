@@ -49,7 +49,7 @@ var handleFileSelect = (e, attempt) => {
     s({
       action: "createUpload",
       file: info
-    }).onResponse((response) => {
+    }, true).onResponse((response) => {
       if(response.status !== "success") {
         console.error("Upload failed (" + response.error + ") Trying again...");
         handleFileSelect(e, ++attempt);
@@ -94,15 +94,17 @@ var handleFileSelect = (e, attempt) => {
             }
 
             // Send each piece
-            var sendPiece = (piece, attempt) => {
-              if(attempt > 5) {
+            var sendPiece = (piece, pAttempt) => {
+              if(pAttempt > 5) {
                 console.error("Upload failed. Trying again...");
+                handleFileSelect(e, ++attempt);
+                return;
               }
               uploadConnection.onmessage = (ue) => {
                 var resp = JSON.parse(ue.data);
                 if(resp.status === 'error') {
                   console.error("There was an error uploading piece " + piece + "/" + pieces.length + " (" + resp.error + ") Trying again...");
-                  sendPiece(piece, ++attempt);
+                  sendPiece(piece, ++pAttempt);
                   return;
                 }
 
@@ -110,7 +112,7 @@ var handleFileSelect = (e, attempt) => {
                 console.info("Uploaded piece " + piece + "/" + pieces.length + " (" + Math.floor((piece/pieces.length) * 100) + "%)");
                 if(piece === pieces.length) {
                   // Finalize the upload
-                  s({action: "finalizeUpload", fileId: response.upload.id}).onResponse((resp) => {
+                  s({action: "finalizeUpload", fileId: response.upload.id}, true).onResponse((resp) => {
                     if(resp.status !== "success") {
                       console.error("Upload failed (" + resp.error + ") Trying again...");
                       handleFileSelect(e, ++attempt);
@@ -146,9 +148,102 @@ var handleFileSelect = (e, attempt) => {
 };
 file.onchange = handleFileSelect;
 
+// Test if a response was failure
+var parse = (resp, boolean) => {
+  boolean = boolean || false;
+  resp = (resp.constructor !== Object ? JSON.parse(resp) : resp);
+  if(resp.status === "success") {
+    return resp;
+  } else {
+    return (boolean ? false : resp);
+  }
+};
+
 // Complete a download
-var download = (fileId) => {
-  s({action: "fileInfo", fileId: fileId}).onResponse((response) => {
-    
+var download = (fileId, attempt) => {
+  // Start the timer if it isn't started
+  if(!timerStart) {
+    var timerStart = Date.now();
+  }
+  attempt = attempt || 0;
+  if (attempt > 5) {
+    console.error("Download failed");
+    return;
+  }
+  s({action: "fileInfo", fileId: fileId}, true).onResponse((response) => {
+    var resp = parse(response, true);
+    if(!resp) {
+      console.error(`Download failed, trying again... (${resp.error})`);
+      download(fileId, ++attempt);
+      return;
+    }
+    var file = resp.file;
+    console.info("Downloading file '" + file.fileName + "'", "\nFile ID: " + file.id, "\nType: " + file.mimetype, "\nSize: " + file.size + " bytes");
+
+    s({action: 'createDownload', fileId: file.id}, true).onResponse((response) => {
+      var resp = parse(response, true);
+      if(!resp) {
+        console.error(`Download failed, trying again... (${resp.error})`);
+        download(fileId, ++attempt);
+        return;
+      }
+      var downloadId = resp.download,
+      numPieces = resp.pieces;
+
+      var downloadConnection = new WebSocket(wsAddress);
+      downloadConnection.onclose = () => {
+        console.error("Download failed, trying again...");
+        download(fileId, ++attempt);
+      };
+      downloadConnection.onopen = () => {
+        downloadConnection.onmessage = (e) => {
+          var resp = parse(e.data, true);
+          if(!resp) {
+            console.error(`Download failed, trying again... (${resp.error})`);
+            download(fileId, ++attempt);
+            return;
+          }
+          downloadConnection.onmessage = (e) => {
+            var resp = parse(e.data, true);
+            if(!resp) {
+              console.error(`Download failed, trying again... (${resp.error})`);
+              download(fileId, ++attempt);
+              return;
+            }
+            var downloadPiece = (piece, dAttempt) => {
+              if(dAttempt > 5) {
+                console.error("Download failed, trying again...");
+                download(fileId, ++attempt);
+                return;
+              }
+              downloadConnection.onmessage = (e) => {
+                var resp = (e.data.constructor === Blob ? true : parse(e.data, true));
+                if(!resp) {
+                  console.error(`Download of piece ${piece}/${numPieces} failed, trying again...`);
+                  downloadPiece(piece, ++attempt);
+                  return;
+                }
+                var progress = Math.floor((piece/numPieces) * 100);
+                console.info(`Downloaded piece ${piece}/${numPieces} (${progress}%)`);
+
+                if(piece < numPieces) {
+                  downloadPiece(++piece, 0);
+                } else {
+                  // Successfully completed upload
+                  var opTime = (Date.now() - timerStart) / 1000;
+                  var transSpeed = Math.floor((file.size / opTime) / 1000);
+                  console.log(`Download complete. Downloaded ${file.size} bytes in ${opTime} seconds (${transSpeed} KB/s)`, `\nFile '${file.fileName}'`);
+                  return;
+                }
+              };
+              downloadConnection.send(piece - 1);
+            };
+            downloadPiece(1, 0);
+          };
+          downloadConnection.send(downloadId);
+        };
+        downloadConnection.send("filedownload");
+      };
+    });
   });
 };
