@@ -10,6 +10,7 @@
             project: "projectid",
             priority: false,
             body: "Foobar",
-            tags:["test"]
+            tags:["test"],
+            attachedFiles: []
         }
     });
