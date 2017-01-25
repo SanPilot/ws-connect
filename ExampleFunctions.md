@@ -5,4 +5,11 @@
     
 ## Create a task
 
-    r("addTask", {task: {project: "projectid", priority: false, body: "Foobar", tags:["test"]}});
+    r("addTask", {
+        task: {
+            project: "projectid",
+            priority: false,
+            body: "Foobar",
+            tags:["test"]
+        }
+    });
