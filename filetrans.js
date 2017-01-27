@@ -161,6 +161,7 @@ var parse = (resp, boolean) => {
 
 // Complete a download
 var download = (fileId, attempt) => {
+  var blobArray = []; // Array to hold blobs
   // Start the timer if it isn't started
   if(!timerStart) {
     var timerStart = Date.now();
@@ -224,6 +225,7 @@ var download = (fileId, attempt) => {
                   return;
                 }
                 var progress = Math.floor((piece/numPieces) * 100);
+                blobArray[piece - 1] = e.data; // Add this blob to the array
                 console.info(`Downloaded piece ${piece}/${numPieces} (${progress}%)`);
 
                 if(piece < numPieces) {
@@ -232,6 +234,18 @@ var download = (fileId, attempt) => {
                   // Successfully completed upload
                   var opTime = (Date.now() - timerStart) / 1000;
                   var transSpeed = Math.floor((file.size / opTime) / 1000);
+                  // Create the result blob
+                  var completedDownload = new Blob(blobArray, {type: "application/octet-stream"}),
+                  downloadURL = URL.createObjectURL(completedDownload);
+                  // Download the file to desktop
+                  var a = document.createElement("a");
+                  document.body.appendChild(a);
+                  a.style = "display: none";
+                  a.href = downloadURL;
+                  a.download = file.fileName;
+                  a.click();
+                  URL.revokeObjectURL(downloadURL);
+
                   console.log(`Download complete. Downloaded ${file.size} bytes in ${opTime} seconds (${transSpeed} KB/s)`, `\nFile '${file.fileName}'`);
                   return;
                 }
