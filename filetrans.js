@@ -36,35 +36,54 @@ var handleFileSelect = (e, attempt) => {
 
   console.log("Uploading file '" + info.name + "'", "\nType: " + (info.type.length ? info.type : "Unknown"), "\nSize: " + info.size + " bytes");
 
-  // Read the file
-  var reader = new FileReader();
-  reader.onabort = reader.onerror = () => {
-    console.error("Upload failed. Trying again...");
-    handleFileSelect(e, ++attempt);
-    return;
+  // Function to convert a blob to an array
+  var createArrBuff = (blob, callback) => {
+    // Create the file reader
+    var reader = new FileReader();
+
+    // Failure
+    reader.onabort = reader.onerror = () => {
+      console.error("Upload failed. Trying again...");
+      handleFileSelect(e, ++attempt);
+      return;
+    };
+
+    // Success
+    reader.onload = (ab) => {
+      callback(ab.target.result);
+    };
+
+    // Read the blob
+    reader.readAsArrayBuffer(blob);
   };
-  reader.onload = (ab) => {
-    file = ab.target.result;
-    // Create the upload
-    s({
-      action: "createUpload",
-      file: info
-    }, true).onResponse((response) => {
-      if(response.status !== "success") {
-        console.error("Upload failed (" + response.error + ") Trying again...");
-        handleFileSelect(e, ++attempt);
-        return;
-      }
-      var uploadConnection = new WebSocket(wsAddress);
-      uploadConnection.onclose = () => {
-        console.error("Upload failed. Trying again");
-        handleFileSelect(e, ++attempt);
-      };
 
-      // Successful connection
-      uploadConnection.onopen = (ue) => {
+  // Create the upload
+  s({
+    action: "createUpload",
+    file: info
+  }, true).onResponse((response) => {
+    if(response.status !== "success") {
+      console.error("Upload failed (" + response.error + ") Trying again...");
+      handleFileSelect(e, ++attempt);
+      return;
+    }
+    var uploadConnection = new WebSocket(wsAddress);
+    uploadConnection.onclose = () => {
+      console.error("Upload failed. Trying again");
+      handleFileSelect(e, ++attempt);
+    };
 
-        // Initate file transfer
+    // Successful connection
+    uploadConnection.onopen = (ue) => {
+
+      // Initate file transfer
+      uploadConnection.onmessage = (ue) => {
+        var resp = JSON.parse(ue.data);
+        if(resp.status === 'error') {
+          console.error("Upload failed (" + resp.error + ") Trying again...");
+          handleFileSelect(e, ++attempt);
+          return;
+        }
         uploadConnection.onmessage = (ue) => {
           var resp = JSON.parse(ue.data);
           if(resp.status === 'error') {
@@ -72,79 +91,66 @@ var handleFileSelect = (e, attempt) => {
             handleFileSelect(e, ++attempt);
             return;
           }
-          uploadConnection.onmessage = (ue) => {
-            var resp = JSON.parse(ue.data);
-            if(resp.status === 'error') {
-              console.error("Upload failed (" + resp.error + ") Trying again...");
+
+          console.info("Successfully opened file transfer connection");
+
+          // Figure out number of pieces
+          var numPieces = 1;
+          if(info.size > response.maxMessageSize) {
+            numPieces = Math.ceil(info.size / response.maxMessageSize);
+          }
+
+          // Send each piece
+          var sendPiece = (piece, pAttempt) => {
+            if(pAttempt > 5) {
+              console.error("Upload failed. Trying again...");
               handleFileSelect(e, ++attempt);
               return;
             }
-
-            console.info("Successfully opened file transfer connection");
-            var pieces = [];
-            // Split the file
-            if(info.size > response.maxMessageSize) {
-              var numPieces = Math.ceil(info.size / response.maxMessageSize);
-              pieces = [];
-              for(var i = 0; i < numPieces; i++) {
-                pieces[i] = file.slice(response.maxMessageSize * i, (response.maxMessageSize * i) + response.maxMessageSize);
-              }
-            } else {
-              pieces = [file];
-            }
-
-            // Send each piece
-            var sendPiece = (piece, pAttempt) => {
-              if(pAttempt > 5) {
-                console.error("Upload failed. Trying again...");
-                handleFileSelect(e, ++attempt);
+            uploadConnection.onmessage = (ue) => {
+              var resp = JSON.parse(ue.data);
+              if(resp.status === 'error') {
+                console.error("There was an error uploading piece " + piece + "/" + numPieces + " (" + resp.error + ") Trying again...");
+                sendPiece(piece, ++pAttempt);
                 return;
               }
-              uploadConnection.onmessage = (ue) => {
-                var resp = JSON.parse(ue.data);
-                if(resp.status === 'error') {
-                  console.error("There was an error uploading piece " + piece + "/" + pieces.length + " (" + resp.error + ") Trying again...");
-                  sendPiece(piece, ++pAttempt);
-                  return;
-                }
 
-                // Piece was uploaded successfully, send next piece
-                console.info("Uploaded piece " + piece + "/" + pieces.length + " (" + Math.floor((piece/pieces.length) * 100) + "%)");
-                if(piece === pieces.length) {
-                  // Finalize the upload
-                  s({action: "finalizeUpload", fileId: response.upload.id}, true).onResponse((resp) => {
-                    if(resp.status !== "success") {
-                      console.error("Upload failed (" + resp.error + ") Trying again...");
-                      handleFileSelect(e, ++attempt);
-                      return;
-                    }
-
-                    // Successfully completed upload
-                    var opTime = (Date.now() - timerStart) / 1000;
-                    console.log("Upload complete. Uploaded " + info.size + " bytes in " + opTime + " seconds (" + Math.floor((info.size / opTime) / 1000) + " KB/s)", "\nFile ID: " + response.upload.id + " (" + info.name + ")");
+              // Piece was uploaded successfully, send next piece
+              console.info("Uploaded piece " + piece + "/" + numPieces + " (" + Math.floor((piece/numPieces) * 100) + "%)");
+              if(piece === numPieces) {
+                // Finalize the upload
+                s({action: "finalizeUpload", fileId: response.upload.id}, true).onResponse((resp) => {
+                  if(resp.status !== "success") {
+                    console.error("Upload failed (" + resp.error + ") Trying again...");
+                    handleFileSelect(e, ++attempt);
                     return;
-                  });
+                  }
+
+                  // Successfully completed upload
+                  var opTime = (Date.now() - timerStart) / 1000;
+                  console.log("Upload complete. Uploaded " + info.size + " bytes in " + opTime + " seconds (" + Math.floor((info.size / opTime) / 1000) + " KB/s)", "\nFile ID: " + response.upload.id + " (" + info.name + ")");
                   return;
-                }
-                sendPiece(++piece, 0);
-              };
-              setTimeout(() => {
-                uploadConnection.send(pieces[piece - 1]);
-              }, 250);
+                });
+                return;
+              }
+              sendPiece(++piece, 0);
             };
-
-            // Start the upload
-            console.info("Starting upload...");
-            sendPiece(1, 0);
+            setTimeout(() => {
+              createArrBuff(file.slice(response.maxMessageSize * (piece - 1), (response.maxMessageSize * (piece - 1)) + response.maxMessageSize), (arraybuf) => {
+                uploadConnection.send(arraybuf);
+              });
+            }, 250);
           };
-          uploadConnection.send(response.upload.id);
-        };
-        uploadConnection.send("fileupload");
-      };
-    });
-  };
 
-  reader.readAsArrayBuffer(file);
+          // Start the upload
+          console.info("Starting upload...");
+          sendPiece(1, 0);
+        };
+        uploadConnection.send(response.upload.id);
+      };
+      uploadConnection.send("fileupload");
+    };
+  });
 };
 file.onchange = handleFileSelect;
 
@@ -167,15 +173,15 @@ var download = (fileId, attempt) => {
     var timerStart = Date.now();
   }
   attempt = attempt || 0;
-  if (attempt > 5) {
+  if (attempt > 4) {
     console.error("Download failed");
     return;
   }
   s({action: "fileInfo", fileId: fileId}, true).onResponse((response) => {
-    var resp = parse(response, true);
-    if(!resp) {
+    var resp = parse(response, false);
+    if(resp.status != 'success') {
       console.error(`Download failed, trying again... (${resp.error})`);
-      download(fileId, ++attempt);
+      setTimeout(() => {download(fileId, ++attempt);}, 100);
       return;
     }
     var file = resp.file;
@@ -185,7 +191,7 @@ var download = (fileId, attempt) => {
       var resp = parse(response, true);
       if(!resp) {
         console.error(`Download failed, trying again... (${resp.error})`);
-        download(fileId, ++attempt);
+        setTimeout(() => {download(fileId, ++attempt);}, 100);
         return;
       }
       var downloadId = resp.download,
@@ -194,27 +200,27 @@ var download = (fileId, attempt) => {
       var downloadConnection = new WebSocket(wsAddress);
       downloadConnection.onclose = () => {
         console.error("Download failed, trying again...");
-        download(fileId, ++attempt);
+        setTimeout(() => {download(fileId, ++attempt);}, 100);
       };
       downloadConnection.onopen = () => {
         downloadConnection.onmessage = (e) => {
           var resp = parse(e.data, true);
           if(!resp) {
             console.error(`Download failed, trying again... (${resp.error})`);
-            download(fileId, ++attempt);
+            setTimeout(() => {download(fileId, ++attempt);}, 100);
             return;
           }
           downloadConnection.onmessage = (e) => {
             var resp = parse(e.data, true);
             if(!resp) {
               console.error(`Download failed, trying again... (${resp.error})`);
-              download(fileId, ++attempt);
+              setTimeout(() => {download(fileId, ++attempt);}, 100);
               return;
             }
             var downloadPiece = (piece, dAttempt) => {
               if(dAttempt > 5) {
                 console.error("Download failed, trying again...");
-                download(fileId, ++attempt);
+                setTimeout(() => {download(fileId, ++attempt);}, 100);
                 return;
               }
               downloadConnection.onmessage = (e) => {
