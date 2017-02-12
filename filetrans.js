@@ -1,5 +1,8 @@
 // WebSockets download/upload speed test
 
+// File server location
+var downloadURL = "http://localhost:3001";
+
 // Callback for when the file is recieved
 var handleFileSelect = (e, attempt) => {
   // Start the timer if it isn't started
@@ -168,10 +171,6 @@ var parse = (resp, boolean) => {
 // Complete a download
 var download = (fileId, attempt) => {
   var blobArray = []; // Array to hold blobs
-  // Start the timer if it isn't started
-  if(!timerStart) {
-    var timerStart = Date.now();
-  }
   attempt = attempt || 0;
   if (attempt > 4) {
     console.error("Download failed");
@@ -194,76 +193,14 @@ var download = (fileId, attempt) => {
         setTimeout(() => {download(fileId, ++attempt);}, 100);
         return;
       }
-      var downloadId = resp.download,
-      numPieces = resp.pieces;
+      var downloadId = resp.content.id;
 
-      var downloadConnection = new WebSocket(wsAddress);
-      downloadConnection.onclose = () => {
-        console.error("Download failed, trying again...");
-        setTimeout(() => {download(fileId, ++attempt);}, 100);
-      };
-      downloadConnection.onopen = () => {
-        downloadConnection.onmessage = (e) => {
-          var resp = parse(e.data, true);
-          if(!resp) {
-            console.error(`Download failed, trying again... (${resp.error})`);
-            setTimeout(() => {download(fileId, ++attempt);}, 100);
-            return;
-          }
-          downloadConnection.onmessage = (e) => {
-            var resp = parse(e.data, true);
-            if(!resp) {
-              console.error(`Download failed, trying again... (${resp.error})`);
-              setTimeout(() => {download(fileId, ++attempt);}, 100);
-              return;
-            }
-            var downloadPiece = (piece, dAttempt) => {
-              if(dAttempt > 5) {
-                console.error("Download failed, trying again...");
-                setTimeout(() => {download(fileId, ++attempt);}, 100);
-                return;
-              }
-              downloadConnection.onmessage = (e) => {
-                var resp = (e.data.constructor === Blob ? true : parse(e.data, true));
-                if(!resp) {
-                  console.error(`Download of piece ${piece}/${numPieces} failed, trying again...`);
-                  downloadPiece(piece, ++attempt);
-                  return;
-                }
-                var progress = Math.floor((piece/numPieces) * 100);
-                blobArray[piece - 1] = e.data; // Add this blob to the array
-                console.info(`Downloaded piece ${piece}/${numPieces} (${progress}%)`);
-
-                if(piece < numPieces) {
-                  downloadPiece(++piece, 0);
-                } else {
-                  // Successfully completed upload
-                  var opTime = (Date.now() - timerStart) / 1000;
-                  var transSpeed = Math.floor((file.size / opTime) / 1000);
-                  // Create the result blob
-                  var completedDownload = new Blob(blobArray, {type: "application/octet-stream"}),
-                  downloadURL = URL.createObjectURL(completedDownload);
-                  // Download the file to desktop
-                  var a = document.createElement("a");
-                  document.body.appendChild(a);
-                  a.style = "display: none";
-                  a.href = downloadURL;
-                  a.download = file.fileName;
-                  a.click();
-                  URL.revokeObjectURL(downloadURL);
-
-                  console.log(`Download complete. Downloaded ${file.size} bytes in ${opTime} seconds (${transSpeed} KB/s)`, `\nFile '${file.fileName}'`);
-                  return;
-                }
-              };
-              downloadConnection.send(piece - 1);
-            };
-            downloadPiece(1, 0);
-          };
-          downloadConnection.send(downloadId);
-        };
-        downloadConnection.send("filedownload");
-      };
+      // Download the file to desktop
+      var a = document.createElement("a");
+      document.body.appendChild(a);
+      a.style = "display: none";
+      a.href = downloadURL + "/" + downloadId;
+      a.click();
     });
   });
 };
