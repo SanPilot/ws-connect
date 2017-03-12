@@ -4,7 +4,7 @@
   <div id="status">NOT CONNECTED</div>
   <input type="file" id="file" multiple>
   <script>
-  var connection, s, auth, authToken, r, file = document.getElementById("file"), lastMessage, simpleConnection, wsAddress = "ws://127.0.0.1:3000";
+  var connection, s, auth, authToken, r, file = document.getElementById("file"), last = {}, simpleConnection, wsAddress = "ws://127.0.0.1:3000";
   file.open = file.click;
   window.WebSocket = window.WebSocket || window.MozWebSocket;
   if(!window.WebSocket) {
@@ -29,7 +29,7 @@
       };
       connection.onmessage = (message) => {
         message = message.data;
-        lastMessage = message;
+        last.rec = message;
         var parseError = "";
         if(message.constructor === String) {
           try {
@@ -58,6 +58,7 @@
           console.error("Failed to parse message: " + parseError); return;
         }
         connection.send(message);
+        last.sent = message;
         callbackArray[messageId] = [() => {}, dontLog];
         var callbackHandler = (callback) => {callbackArray[messageId] = [callback || function(){}, dontLog]};
         return {onResponse: callbackHandler};
