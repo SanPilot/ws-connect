@@ -12,7 +12,14 @@
   } else {
     var c = () => {
       simpleConnection = new WebSocket(wsAddress);
-      var callbackArray = {};
+      var callbackArray = {},
+
+      // Prevent getting blocked by the server
+      lastSec = 0;
+      var freqInterval = setInterval(() => {
+        lastSec = 0;
+      }, 1000);
+
       console.clear();
       connection = new WebSocket(wsAddress);
       document.getElementById("status").style.color = "#19E019";
@@ -21,11 +28,13 @@
         document.getElementById("status").style.color = "#FF7D7D";
         document.getElementById("status").innerHTML = "NOT CONNECTED";
         console.error("There was an error connecting to the server!");
+        clearInterval(freqInterval);
       };
       connection.onclose = () => {
         document.getElementById("status").style.color = "#FF7D7D";
         document.getElementById("status").innerHTML = "NOT CONNECTED";
         console.error("The server closed the connection unexpectedly.");
+        clearInterval(freqInterval);
       };
       connection.onmessage = (message) => {
         message = message.data;
@@ -44,7 +53,19 @@
         if(!callback[1]) {
           console.log(message);
         }
-        callbackArray[message.id] = undefined;
+        delete callbackArray[message.id];
+      };
+      confSend = (message) => {
+        // Prevent becoming blocked by the server
+        if(lastSec >= 10) {
+          setTimeout(() => {
+            confSend(message);
+          }, 50);
+          return;
+        }
+        connection.send(message);
+        lastSec++;
+        last.sent = message;
       };
       s = (message, dontLog) => {
         dontLog = dontLog || false;
@@ -57,8 +78,7 @@
         } catch(e) {
           console.error("Failed to parse message: " + parseError); return;
         }
-        connection.send(message);
-        last.sent = message;
+        confSend(message);
         callbackArray[messageId] = [() => {}, dontLog];
         var callbackHandler = (callback) => {callbackArray[messageId] = [callback || function(){}, dontLog]};
         return {onResponse: callbackHandler};
