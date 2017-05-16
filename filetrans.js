@@ -1,4 +1,4 @@
-// WebSockets download/upload speed test
+// Backend download/upload speed test
 
 // File server location
 var transferURL = "http://localhost:3001";
