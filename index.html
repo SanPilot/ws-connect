@@ -8,7 +8,7 @@
   file.open = file.click;
   window.WebSocket = window.WebSocket || window.MozWebSocket;
   if(!window.WebSocket) {
-    console.error("Could not find websocket API! Maybe your browser doesn't support WebSockets.");
+    console.error("Could not find WebSocket API! Maybe your browser doesn't support WebSockets.");
   } else {
     var c = () => {
       simpleConnection = new WebSocket(wsAddress);
